@@ -30,7 +30,7 @@ public static class Api
             var version = await claude.VersionAsync();
             if (version is null)
                 problems.Add("The Claude CLI ('claude') was not found on PATH. Install Claude Code, run 'claude' once to log in, then restart this server.");
-            return new SetupStatus(problems, paths.MasterResume, File.Exists(paths.Highlights) ? paths.Highlights : null, version);
+            return new SetupStatus(problems, paths.MasterResume, [.. DataFolder.BackgroundFiles(paths).Select(f => Path.GetRelativePath(paths.Background, f))], version);
         });
 
         api.MapGet("/jobs", (JobStore store) => store.List());

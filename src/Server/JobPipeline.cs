@@ -147,14 +147,17 @@ public sealed class JobPipeline(
         var notesPath = Path.Combine(folder, "notes.md");
         var master = Files.ReadIfExists(paths.MasterResume)
             ?? throw new InvalidOperationException($"No master resume at {paths.MasterResume}. See the setup notes on the dashboard.");
-        var highlights = Files.ReadIfExists(paths.Highlights) ?? "";
         var spec = await File.ReadAllTextAsync(Path.Combine(folder, "spec.md"), ct);
         var current = Files.ReadIfExists(resumePath);
         var pending = s.ChangeRequests.Where(c => c.Status == ChangeRequestStatus.Pending).ToList();
 
         // Stable inputs first, so the prompt cache is reused from one job to the next.
-        var input = new StringBuilder()
-            .AppendLine("<career_highlights>").AppendLine(highlights).AppendLine("</career_highlights>").AppendLine()
+        var input = new StringBuilder().AppendLine("<background>");
+        foreach (var file in DataFolder.BackgroundFiles(paths))
+            input.AppendLine($"<document name=\"{Path.GetRelativePath(paths.Background, file).Replace('\\', '/')}\">")
+                 .AppendLine(await File.ReadAllTextAsync(file, ct))
+                 .AppendLine("</document>");
+        input.AppendLine("</background>").AppendLine()
             .AppendLine("<master_resume>").AppendLine(master).AppendLine("</master_resume>").AppendLine()
             .AppendLine($"<job_advert company=\"{s.Company}\" role=\"{s.Role}\" location=\"{s.Location}\" url=\"{s.Url}\">")
             .AppendLine(spec)

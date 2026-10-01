@@ -74,7 +74,7 @@ export interface JobDetail {
 export interface SetupStatus {
   problems: string[];
   masterResumePath: string;
-  highlightsPath: string | null;
+  backgroundFiles: string[];
   claudeVersion: string | null;
 }
 

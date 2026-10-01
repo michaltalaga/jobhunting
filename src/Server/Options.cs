@@ -11,7 +11,8 @@ public sealed class JobHuntingOptions
     public string ApplicationsDir { get; set; } = "data/applications";
     public string PromptsDir { get; set; } = "prompts";
     public string MasterResumePath { get; set; } = "data/resume.json";
-    public string HighlightsPath { get; set; } = "data/career-highlights.md";
+    /// <summary>Optional folder of .md/.txt files with extra career material, all passed to tailoring.</summary>
+    public string BackgroundDir { get; set; } = "data/background";
 
     public ClaudeOptions Claude { get; set; } = new();
     public RenderOptions Render { get; set; } = new();
@@ -51,7 +52,7 @@ public sealed class Paths
         Inbox = Path.Combine(Applications, "_inbox");
         Prompts = Path.GetFullPath(Path.Combine(RepoRoot, options.PromptsDir));
         MasterResume = Path.GetFullPath(Path.Combine(RepoRoot, options.MasterResumePath));
-        Highlights = Path.GetFullPath(Path.Combine(RepoRoot, options.HighlightsPath));
+        Background = Path.GetFullPath(Path.Combine(RepoRoot, options.BackgroundDir));
         RenderScript = Path.GetFullPath(Path.Combine(RepoRoot, options.Render.Script));
     }
 
@@ -60,7 +61,7 @@ public sealed class Paths
     public string Inbox { get; }
     public string Prompts { get; }
     public string MasterResume { get; }
-    public string Highlights { get; }
+    public string Background { get; }
     public string RenderScript { get; }
 
     public string Prompt(string name) => Path.Combine(Prompts, name);

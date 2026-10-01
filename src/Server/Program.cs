@@ -1,4 +1,5 @@
 using JobHunting.Server;
+using Microsoft.Extensions.FileProviders;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -28,11 +29,16 @@ builder.WebHost.ConfigureKestrel(k => k.Limits.MaxRequestBodySize = 100 * 1024 *
 
 var app = builder.Build();
 
+DataFolder.Initialize(app.Services.GetRequiredService<Paths>());
 app.Services.GetRequiredService<JobStore>().Load();
 
-app.UseDefaultFiles();
-app.UseStaticFiles();
+// The dashboard is built into src/web/dist (see BuildSpa in the .csproj).
+var spaDir = Path.Combine(repoRoot, "src", "web", "dist");
+Directory.CreateDirectory(spaDir);
+var spa = new StaticFileOptions { FileProvider = new PhysicalFileProvider(spaDir) };
+app.UseDefaultFiles(new DefaultFilesOptions { FileProvider = spa.FileProvider });
+app.UseStaticFiles(spa);
 app.MapApi();
-app.MapFallbackToFile("index.html");
+app.MapFallbackToFile("index.html", spa);
 
 app.Run();

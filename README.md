@@ -20,7 +20,7 @@ Everything runs on your machine. Your data stays in `data/`, which this repo ign
 
 1. Clone this repo.
 2. Put your resume in [JSON Resume](https://jsonresume.org/schema) format at `data/resume.json`.
-3. Optional: write anything else worth knowing about your career in `data/career-highlights.md` (projects, achievements, numbers, context). The tailoring step draws on it, but never invents anything beyond it and your resume.
+3. Optional: put any extra material about your career in `data/background/` as `.md` or `.txt` files: project and achievement notes with numbers, older or longer CVs, a LinkedIn export, performance reviews. Tailoring draws on all of it, but never invents anything beyond it and your resume. The folder is created on first run, with a note explaining it.
 4. Start the server:
    ```bash
    dotnet run --project src/Server
@@ -41,8 +41,8 @@ Jobs run one at a time. Extraction takes under a minute, and tailoring a few min
 
 ```
 data/                                  ignored by this repo
-  resume.json                          master resume (JSON Resume)
-  career-highlights.md                 optional
+  resume.json                          master resume (JSON Resume), the authority on titles and dates
+  background/                          optional: any .md/.txt files with extra career material
   settings.json                        optional personal overrides (see Configuration)
   applications/
     _inbox/<id>/                       until extraction knows company and role
@@ -74,12 +74,12 @@ The tailoring prompt forbids inventing employers, titles, dates, metrics or skil
 
 ## Configuration
 
-Defaults live in `src/Server/appsettings.json`, under `JobHunting`. To override them, use `data/settings.json` with the same shape:
+Defaults live in `src/Server/appsettings.json`, under `JobHunting`. To override them, use an optional `data/settings.json` with the same shape:
 
 ```json
 {
   "JobHunting": {
-    "MasterResumePath": "../my-resume/resume.json"
+    "Claude": { "Tailor": { "Effort": "high" } }
   }
 }
 ```
@@ -87,7 +87,7 @@ Defaults live in `src/Server/appsettings.json`, under `JobHunting`. To override 
 | Setting | Default | |
 |---|---|---|
 | `MasterResumePath` | `data/resume.json` | paths are relative to the repo root |
-| `HighlightsPath` | `data/career-highlights.md` | |
+| `BackgroundDir` | `data/background` | |
 | `ApplicationsDir` | `data/applications` | |
 | `Claude:Extract`, `Claude:Tailor` | `claude-opus-5-5`, effort `xhigh` | model and effort for each step |
 | `Claude:TimeoutMinutes` | `30` | per CLI call |

@@ -85,7 +85,7 @@ public sealed record ApplicationStatusBody(ApplicationStatus Status);
 public sealed record CreatedResponse(string Id, IReadOnlyList<string> DuplicateOf);
 
 /// <summary>What the dashboard shows on first run: anything that stops jobs from being processed.</summary>
-public sealed record SetupStatus(IReadOnlyList<string> Problems, string MasterResumePath, string? HighlightsPath, string? ClaudeVersion);
+public sealed record SetupStatus(IReadOnlyList<string> Problems, string MasterResumePath, IReadOnlyList<string> BackgroundFiles, string? ClaudeVersion);
 
 public sealed record JobSummary(
     string Id,
