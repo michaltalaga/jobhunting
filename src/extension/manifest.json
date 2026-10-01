@@ -1,0 +1,14 @@
+{
+  "manifest_version": 3,
+  "name": "Job Hunting Capture",
+  "version": "1.0.0",
+  "description": "One click sends the job advert in this tab, as rendered, to the local job hunting queue.",
+  "action": {
+    "default_title": "Capture this job advert"
+  },
+  "permissions": ["scripting", "activeTab", "contextMenus"],
+  "host_permissions": ["<all_urls>"],
+  "background": {
+    "service_worker": "background.js"
+  }
+}

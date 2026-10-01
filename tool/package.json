@@ -1,0 +1,6 @@
+{
+  "name": "jobhunting-render",
+  "private": true,
+  "type": "module",
+  "description": "Renders a JSON Resume to PDF with a JSON Resume theme and the locally installed Chrome."
+}

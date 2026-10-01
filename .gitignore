@@ -1,0 +1,10 @@
+bin/
+obj/
+.vs/
+*.user
+node_modules/
+src/Server/wwwroot/
+*.tmp
+
+# Personal data (resume, highlights, applications). Keep it in its own private repo if you want history.
+data/

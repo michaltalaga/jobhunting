@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>JobHunting.Server</RootNamespace>
+  </PropertyGroup>
+
+  <!-- Builds the React SPA into wwwroot, so `dotnet run` is the only command a fresh clone needs.
+       Incremental: skipped while wwwroot/index.html is newer than every SPA source file. -->
+  <ItemGroup>
+    <SpaSource Include="..\web\src\**\*;..\web\index.html;..\web\package.json;..\web\vite.config.ts" />
+  </ItemGroup>
+
+  <Target Name="BuildSpa" BeforeTargets="BeforeBuild" Inputs="@(SpaSource)" Outputs="wwwroot\index.html"
+          Condition="'$(DesignTimeBuild)' != 'true'">
+    <Exec Command="npm ci" WorkingDirectory="..\web" Condition="!Exists('..\web\node_modules')" />
+    <Exec Command="npm run build" WorkingDirectory="..\web" />
+  </Target>
+
+</Project>
