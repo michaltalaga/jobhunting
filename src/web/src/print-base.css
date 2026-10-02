@@ -1,0 +1,73 @@
+/* Shared by every theme. Themes set typography and colour; this sets the page. */
+
+@page {
+  size: A4;
+  margin: 14mm 16mm;
+}
+
+* {
+  box-sizing: border-box;
+  /* Print backgrounds and rules exactly as designed. */
+  print-color-adjust: exact;
+  -webkit-print-color-adjust: exact;
+}
+
+html,
+body {
+  margin: 0;
+  background: #fff;
+}
+
+.r-section h2,
+.r-entry-head {
+  break-after: avoid;
+}
+
+/* The heading's two halves sit in separate flex boxes, so the PDF text has no space between them and
+   ATS parsers read "Cloudflare WorkersMay 2026". A non-breaking space keeps the words apart. */
+.r-entry-meta::before {
+  content: "\00a0";
+}
+
+/* A fit row's requirement and proof may sit in two columns too. Ending the requirement with the space
+   keeps it out of sight there, where a leading one would indent the proof. */
+.r-fit-requirement::after {
+  content: "\00a0";
+}
+
+.r-highlights li,
+.r-list li,
+.r-skill-group,
+.r-fit-item {
+  break-inside: avoid;
+}
+
+/* With a fit block, page 1 is the pitch (header, summary, skills, fit) and what follows starts on page 2.
+   A theme that wants the content to flow on instead can set break-before: auto. */
+.r-fit + .r-section {
+  break-before: page;
+}
+
+/* On screen (the job page's preview), show the resume as an A4 sheet. */
+@media screen {
+  body {
+    background: #e6e8ec;
+    padding: 24px 0;
+  }
+
+  .resume {
+    width: 210mm;
+    min-height: 297mm;
+    margin: 0 auto;
+    padding: 14mm 16mm;
+    background: #fff;
+    box-shadow: 0 2px 14px rgb(0 0 0 / 0.18);
+  }
+
+  /* The sheet on screen is one long page, so mark where the fit block's page break falls. */
+  .r-fit + .r-section {
+    margin: 14pt -16mm 0;
+    padding: 0 16mm;
+    border-top: 1px dashed #b5bcc5;
+  }
+}

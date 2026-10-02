@@ -1,33 +1,125 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent, type MouseEvent } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router';
 import { api, type JobSummary, type SetupStatus } from './api';
 import { useJobs } from './jobs';
-import { ApplicationBadge, ClosingTag, Header, ProcessingBadge, formatDate, formatDateTime, jobTitle } from './ui';
+import { QueueStrip, useQueuePosition } from './Queue';
+import {
+  ApplicationBadge,
+  ClosingTag,
+  Header,
+  MatchPill,
+  NoReplyTag,
+  ProcessingBadge,
+  formatDate,
+  formatDateTime,
+  isAwaitingReply,
+  isWorking,
+  jobTitle,
+} from './ui';
 
+const dropped = (j: JobSummary) => j.applicationStatus === 'dropped';
+
+// Every view except "Dropped" leaves dropped jobs out.
 const filters: { key: string; label: string; match: (j: JobSummary) => boolean }[] = [
-  { key: 'all', label: 'All', match: () => true },
-  { key: 'progress', label: 'In progress', match: (j) => j.status !== 'processed' && j.status !== 'failed' },
+  { key: 'all', label: 'Active', match: () => true },
+  { key: 'new', label: 'New', match: (j) => j.status === 'new' },
+  { key: 'progress', label: 'In progress', match: (j) => !['new', 'processed', 'failed', 'onHold', 'readyToTailor'].includes(j.status) },
+  { key: 'totailor', label: 'To tailor', match: (j) => j.status === 'readyToTailor' },
+  { key: 'hold', label: 'On hold', match: (j) => j.status === 'onHold' },
   { key: 'ready', label: 'Ready to apply', match: (j) => j.status === 'processed' && j.applicationStatus === 'notApplied' },
   { key: 'applied', label: 'Applied', match: (j) => j.applicationStatus === 'applied' || j.applicationStatus === 'interview' },
+  { key: 'noreply', label: 'No reply', match: isAwaitingReply },
   { key: 'offer', label: 'Offers', match: (j) => j.applicationStatus === 'offer' },
   { key: 'rejected', label: 'Rejected', match: (j) => j.applicationStatus === 'rejected' },
   { key: 'failed', label: 'Failed', match: (j) => j.status === 'failed' },
+  { key: 'dropped', label: 'Dropped', match: dropped },
 ];
+
+const inView = (key: string, match: (j: JobSummary) => boolean) => (j: JobSummary) =>
+  key === 'dropped' ? match(j) : !dropped(j) && match(j);
+
+/** Quick actions for one row, each shown only when it can run right now. */
+function RowActions({ job }: { job: JobSummary }) {
+  const { upsert } = useJobs();
+  const [error, setError] = useState<string | null>(null);
+  const busy = isWorking(job.status);
+  const act = (e: MouseEvent, action: () => Promise<JobSummary | undefined>) => {
+    e.stopPropagation();
+    setError(null);
+    action().then(upsert, (err: Error) => setError(err.message));
+  };
+
+  if (dropped(job))
+    return (
+      <button className="secondary small" title="Back to Not applied" onClick={(e) => act(e, () => api.setApplicationStatus(job.id, 'notApplied'))}>
+        Restore
+      </button>
+    );
+
+  // Held, new, failed or finished jobs can all be started; only running or already-queued ones can't.
+  const idle = !busy && job.status !== 'queued';
+  const canScore = idle && job.matchScore == null;
+  const canTailor = idle && !job.hasResume;
+  const pdfPending = job.render === 'queued' || job.render === 'rendering';
+  const canRender = job.hasResume && !busy && !pdfPending && (!job.hasPdf || job.render === 'failed');
+  return (
+    <span className="row-actions" title={error ?? undefined}>
+      {pdfPending && <span className="muted small">PDF…</span>}
+      {canRender && (
+        <button
+          className="small"
+          title={job.render === 'failed' ? `Last render failed: ${job.renderError ?? ''}` : 'Render the PDF'}
+          onClick={(e) => act(e, () => api.render(job.id))}
+        >
+          Render
+        </button>
+      )}
+      {canScore && (
+        <button className="small" title="Extract the advert and score your match" onClick={(e) => act(e, () => api.score(job.id))}>
+          Score
+        </button>
+      )}
+      {canTailor && (
+        <button className="small" title="Write the tailored resume (scores first if needed)" onClick={(e) => act(e, () => api.tailor(job.id))}>
+          Tailor
+        </button>
+      )}
+      {!busy && (
+        <button className="secondary small" title="Not pursuing it: hide it and never process it" onClick={(e) => act(e, () => api.setApplicationStatus(job.id, 'dropped'))}>
+          Drop
+        </button>
+      )}
+      {error && <span className="error-text small">!</span>}
+    </span>
+  );
+}
 
 export function JobList() {
   const { jobs, loaded, error } = useJobs();
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
   const active = filters.find((f) => f.key === params.get('filter')) ?? filters[0];
+  const positionOf = useQueuePosition();
+  const byMatch = params.get('sort') === 'match';
 
-  const all = [...jobs.values()].sort((a, b) => b.capturedAt.localeCompare(a.capturedAt));
-  const visible = all.filter(active.match);
+  const all = [...jobs.values()].sort((a, b) =>
+    byMatch ? (b.matchScore ?? -1) - (a.matchScore ?? -1) || b.capturedAt.localeCompare(a.capturedAt) : b.capturedAt.localeCompare(a.capturedAt),
+  );
+  const visible = all.filter(inView(active.key, active.match));
+
+  function setSort(match: boolean) {
+    const next = new URLSearchParams(params);
+    if (match) next.set('sort', 'match');
+    else next.delete('sort');
+    setParams(next);
+  }
 
   return (
     <>
       <Header />
       <main className="page">
         <SetupBanner />
+        <QueueStrip />
         <PastePanel />
 
         <nav className="filters">
@@ -35,9 +127,14 @@ export function JobList() {
             <button
               key={f.key}
               className={f === active ? 'chip active' : 'chip'}
-              onClick={() => setParams(f.key === 'all' ? {} : { filter: f.key })}
+              onClick={() => {
+                const next = new URLSearchParams(params);
+                if (f.key === 'all') next.delete('filter');
+                else next.set('filter', f.key);
+                setParams(next);
+              }}
             >
-              {f.label} <span className="count">{all.filter(f.match).length}</span>
+              {f.label} <span className="count">{all.filter(inView(f.key, f.match)).length}</span>
             </button>
           ))}
         </nav>
@@ -52,18 +149,31 @@ export function JobList() {
           <table className="jobs">
             <thead>
               <tr>
-                <th>Captured</th>
+                <th>
+                  <button className={byMatch ? 'th-sort' : 'th-sort active'} onClick={() => setSort(false)}>
+                    Captured
+                  </button>
+                </th>
+                <th>
+                  <button className={byMatch ? 'th-sort active' : 'th-sort'} onClick={() => setSort(true)} title="Sort by match score">
+                    Match
+                  </button>
+                </th>
                 <th>Role</th>
                 <th>Company</th>
                 <th>Location</th>
                 <th>Processing</th>
                 <th>Application</th>
+                <th>Actions</th>
               </tr>
             </thead>
             <tbody>
               {visible.map((job) => (
                 <tr key={job.id} onClick={() => navigate(`/jobs/${job.id}`)}>
                   <td className="nowrap muted">{formatDateTime(job.capturedAt)}</td>
+                  <td>
+                    <MatchPill score={job.matchScore} />
+                  </td>
                   <td>
                     <Link to={`/jobs/${job.id}`} onClick={(e) => e.stopPropagation()}>
                       {jobTitle(job)}
@@ -78,20 +188,25 @@ export function JobList() {
                   </td>
                   <td>{job.company ?? '—'}</td>
                   <td className="muted">{job.location ?? '—'}</td>
-                  <td>
+                  <td className="nowrap">
                     <ProcessingBadge status={job.status} />
+                    {positionOf(job.id) && <span className="muted small"> #{positionOf(job.id)}</span>}
                   </td>
                   <td className="nowrap">
                     <ApplicationBadge status={job.applicationStatus} />
                     {job.applicationStatus !== 'notApplied' && job.applicationStatusAt && (
                       <span className="muted small"> {formatDate(job.applicationStatusAt)}</span>
                     )}
+                    <NoReplyTag job={job} />
+                  </td>
+                  <td className="nowrap">
+                    <RowActions job={job} />
                   </td>
                 </tr>
               ))}
               {loaded && visible.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="empty">
+                  <td colSpan={8} className="empty">
                     Nothing here.
                   </td>
                 </tr>
@@ -131,14 +246,20 @@ function PastePanel() {
   const [url, setUrl] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [existing, setExisting] = useState<string | null>(null);
 
   async function submit(e: FormEvent) {
     e.preventDefault();
     setBusy(true);
     setError(null);
+    setExisting(null);
     try {
-      const { id } = await api.paste(text, url);
-      navigate(`/jobs/${id}`);
+      const { id, created } = await api.paste(text, url);
+      if (created) navigate(`/jobs/${id}`);
+      else {
+        setExisting(id);
+        setBusy(false);
+      }
     } catch (err) {
       setError((err as Error).message);
       setBusy(false);
@@ -166,6 +287,11 @@ function PastePanel() {
         autoFocus
       />
       {error && <p className="alert error">{error}</p>}
+      {existing && (
+        <p className="alert warn">
+          This advert is already in your list, so nothing was added. <Link to={`/jobs/${existing}`}>Open it</Link>
+        </p>
+      )}
       <div className="row">
         <button type="submit" disabled={busy || !text.trim()}>
           {busy ? 'Adding…' : 'Add to queue'}

@@ -1,5 +1,49 @@
-export type ProcessingStatus = 'queued' | 'extracting' | 'tailoring' | 'rendering' | 'processed' | 'failed';
-export type ApplicationStatus = 'notApplied' | 'applied' | 'interview' | 'rejected' | 'offer';
+export type ProcessingStatus =
+  | 'new'
+  | 'queued'
+  | 'extracting'
+  | 'scoring'
+  | 'readyToTailor'
+  | 'tailoring'
+  | 'rendering'
+  | 'reviewing'
+  | 'processed'
+  | 'failed'
+  | 'onHold';
+
+export interface ApplicationEvent {
+  id: string;
+  at: string;
+  type: string;
+  note: string | null;
+}
+
+export interface MatchRequirement {
+  requirement: string;
+  status: 'met' | 'partial' | 'missing';
+  evidence: string | null;
+}
+
+export interface JobMatch {
+  score: number;
+  summary: string | null;
+  requirements: MatchRequirement[];
+  seniority: string | null;
+  domain: string | null;
+  location: string | null;
+  biggestGap: string | null;
+  at: string;
+}
+
+export type RenderState = 'none' | 'queued' | 'rendering' | 'failed';
+
+export interface QueueState {
+  paused: boolean;
+  /** Jobs the workers are running right now (several when Workers > 1). */
+  running: string[];
+  waiting: string[];
+}
+export type ApplicationStatus = 'notApplied' | 'applied' | 'interview' | 'rejected' | 'offer' | 'dropped';
 
 export interface JobSummary {
   id: string;
@@ -21,9 +65,20 @@ export interface JobSummary {
   applicationStatus: ApplicationStatus;
   applicationStatusAt: string | null;
   appliedAt: string | null;
+  /** Latest logged employer response (confirmation, contact, interview, rejection, offer). */
+  lastResponseAt: string | null;
   pendingChanges: number;
+  /** null: the default theme */
+  theme: string | null;
+  matchScore: number | null;
   hasResume: boolean;
   hasPdf: boolean;
+  pdfPages: number | null;
+  /** The theme the current PDF was rendered with. */
+  pdfTheme: string | null;
+  /** PDFs render only when you ask, in their own queue. */
+  render: RenderState;
+  renderError: string | null;
   duplicateOf: string[];
   updatedAt: string;
 }
@@ -33,6 +88,8 @@ export interface ChangeRequest {
   text: string;
   status: 'pending' | 'done' | 'failed';
   error: string | null;
+  /** Written by the pre-send review, not by you; hidden in the UI. */
+  fromReview: boolean;
 }
 
 export interface Recruiter {
@@ -62,6 +119,10 @@ export interface ClaudeRun {
 export interface JobDetail {
   job: JobSummary;
   recruiter: Recruiter | null;
+  match: JobMatch | null;
+  applicationEvents: ApplicationEvent[];
+  /** Only the settings this job overrides. */
+  tailoringOverrides: Record<string, SettingValue>;
   spec: string | null;
   notes: string | null;
   resumeJson: string | null;
@@ -69,6 +130,34 @@ export interface JobDetail {
   timeline: TimelineEvent[];
   runs: ClaudeRun[];
   warnings: string[];
+}
+
+export type SettingValue = string | number;
+
+export interface SettingDef {
+  key: string;
+  label: string;
+  type: 'number' | 'choice' | 'text' | 'textarea';
+  default: SettingValue;
+  description: string;
+  options: string[] | null;
+}
+
+export interface TailoringSettings {
+  definitions: SettingDef[];
+  values: Record<string, SettingValue>;
+}
+
+export interface ThemeInfo {
+  id: string;
+  name: string;
+  description: string | null;
+  personal: boolean;
+}
+
+export interface ThemeList {
+  default: string;
+  themes: ThemeInfo[];
 }
 
 export interface SetupStatus {
@@ -101,19 +190,40 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
     }
     throw new ApiError(message, response.status);
   }
-  return response.status === 204 ? (undefined as T) : ((await response.json()) as T);
+  const text = await response.text(); // 202/204 replies have no body
+  return (text ? JSON.parse(text) : undefined) as T;
 }
 
 export const api = {
   setup: () => request<SetupStatus>('GET', '/setup'),
+  queue: () => request<QueueState>('GET', '/queue'),
+  pauseQueue: () => request<QueueState>('POST', '/queue/pause'),
+  resumeQueue: () => request<QueueState>('POST', '/queue/resume'),
+  hold: (id: string) => request<JobSummary | undefined>('POST', `/jobs/${id}/hold`),
+  resume: (id: string) => request<JobSummary>('POST', `/jobs/${id}/resume`),
+  prioritize: (id: string) => request<QueueState>('POST', `/jobs/${id}/prioritize`),
+  tailor: (id: string) => request<JobSummary>('POST', `/jobs/${id}/tailor`),
+  addEvent: (id: string, type: string, note: string, at: string) =>
+    request<JobSummary>('POST', `/jobs/${id}/events`, { type, note: note || null, at }),
+  deleteEvent: (id: string, eventId: string) => request<JobSummary>('DELETE', `/jobs/${id}/events/${eventId}`),
+  score: (id: string) => request<JobSummary>('POST', `/jobs/${id}/score`),
   list: () => request<JobSummary[]>('GET', '/jobs'),
   detail: (id: string) => request<JobDetail>('GET', `/jobs/${id}`),
+  /** created = false: the URL was already in the list; nothing was added and id is the existing job. */
   paste: (text: string, url: string) =>
-    request<{ id: string; duplicateOf: string[] }>('POST', '/jobs/paste', { text, url: url || null }),
+    request<{ id: string; created: boolean; duplicateOf: string[] }>('POST', '/jobs/paste', { text, url: url || null }),
   requestChanges: (id: string, text: string) => request<JobSummary>('POST', `/jobs/${id}/changes`, { text }),
   retry: (id: string) => request<JobSummary>('POST', `/jobs/${id}/retry`),
   regenerate: (id: string) => request<JobSummary>('POST', `/jobs/${id}/regenerate`),
   reextract: (id: string) => request<JobSummary>('POST', `/jobs/${id}/reextract`),
+  themes: () => request<ThemeList>('GET', '/themes'),
+  tailoringSettings: () => request<TailoringSettings>('GET', '/settings/tailoring'),
+  saveTailoringSettings: (values: Record<string, SettingValue>) =>
+    request<TailoringSettings>('PUT', '/settings/tailoring', values),
+  setJobTailoring: (id: string, overrides: Record<string, SettingValue>, regenerate: boolean) =>
+    request<JobSummary>('PUT', `/jobs/${id}/tailoring`, { overrides, regenerate }),
+  setTheme: (id: string, theme: string) => request<JobSummary>('POST', `/jobs/${id}/theme`, { theme }),
+  render: (id: string) => request<JobSummary>('POST', `/jobs/${id}/render`),
   setApplicationStatus: (id: string, status: ApplicationStatus) =>
     request<JobSummary>('POST', `/jobs/${id}/application-status`, { status }),
   remove: (id: string) => request<void>('DELETE', `/jobs/${id}`),
@@ -122,3 +232,7 @@ export const api = {
 /** Versioned by updatedAt so an iframe or link never shows a stale cached artifact. */
 export const fileUrl = (job: JobSummary, name: string) =>
   `/api/jobs/${job.id}/files/${name}?v=${encodeURIComponent(job.updatedAt)}`;
+
+/** The same page the server prints to resume.pdf. */
+export const printUrl = (job: JobSummary, theme: string) =>
+  `/print.html?job=${job.id}&theme=${encodeURIComponent(theme)}&v=${encodeURIComponent(job.updatedAt)}`;

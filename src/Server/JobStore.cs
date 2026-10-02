@@ -54,10 +54,22 @@ public sealed class JobStore(Paths paths, JobEvents events, ILogger<JobStore> lo
         foreach (var id in stranded) MoveToFinalFolder(id);
     }
 
-    public JobSummary Create(JobSource source, string? url, string? pageTitle, string text, string? html)
+    /// <summary>
+    /// Creates a job, unless one with the same advert URL already exists: then nothing is added and
+    /// <paramref name="created"/> is false, with that existing job returned.
+    /// </summary>
+    public JobSummary Create(JobSource source, string? url, string? pageTitle, string text, string? html, out bool created)
     {
         lock (_gate)
         {
+            var key = NormalizeUrl(url);
+            if (key is not null && _jobs.Values.FirstOrDefault(e => NormalizeUrl(e.State.Url) == key) is { } existing)
+            {
+                created = false;
+                return Summarize(existing);
+            }
+            created = true;
+
             string id;
             do id = RandomNumberGenerator.GetString("abcdefghijklmnopqrstuvwxyz0123456789", 6);
             while (_jobs.ContainsKey(id));
@@ -75,7 +87,7 @@ public sealed class JobStore(Paths paths, JobEvents events, ILogger<JobStore> lo
                 Url = url,
                 PageTitle = pageTitle,
                 CapturedAt = now,
-                Status = ProcessingStatus.Queued,
+                Status = ProcessingStatus.New, // nothing runs until you start it
                 Timeline = [new TimelineEvent(now, source == JobSource.Paste ? "pasted" : "captured", url)],
                 UpdatedAt = now,
             }, folder);
@@ -114,6 +126,9 @@ public sealed class JobStore(Paths paths, JobEvents events, ILogger<JobStore> lo
             return new JobDetail(
                 Summarize(e),
                 s.Recruiter,
+                s.Match,
+                [.. s.ApplicationEvents.OrderBy(e => e.At)],
+                (System.Text.Json.Nodes.JsonObject?)s.Tailoring?.DeepClone() ?? [],
                 Files.ReadIfExists(Path.Combine(e.Folder, "spec.md")),
                 Files.ReadIfExists(Path.Combine(e.Folder, "notes.md")),
                 Files.ReadIfExists(Path.Combine(e.Folder, "resume.json")),
@@ -243,10 +258,21 @@ public sealed class JobStore(Paths paths, JobEvents events, ILogger<JobStore> lo
             s.ApplicationStatus,
             s.Timeline.LastOrDefault(t => t.Event.StartsWith("application.", StringComparison.Ordinal))?.At,
             s.Timeline.FirstOrDefault(t => t.Event.StartsWith("application.", StringComparison.Ordinal)
-                                           && t.Event != TimelineEvents.Application(ApplicationStatus.NotApplied))?.At,
-            s.ChangeRequests.Count(c => c.Status == ChangeRequestStatus.Pending),
+                                           && t.Event != TimelineEvents.Application(ApplicationStatus.NotApplied)
+                                           && t.Event != TimelineEvents.Application(ApplicationStatus.Dropped))?.At,
+            s.ApplicationEvents
+                .Where(e => ApplicationEventTypes.All.TryGetValue(e.Type, out var t) && t.Response)
+                .Select(e => (DateTimeOffset?)e.At)
+                .Max(),
+            s.ChangeRequests.Count(c => c.Status == ChangeRequestStatus.Pending && !c.FromReview),
+            s.Theme,
+            s.Match?.Score,
             File.Exists(Path.Combine(e.Folder, "resume.json")),
             File.Exists(Path.Combine(e.Folder, "resume.pdf")),
+            s.PdfPages,
+            s.PdfTheme,
+            s.Render,
+            s.RenderError,
             duplicates,
             s.UpdatedAt);
     }

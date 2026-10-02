@@ -12,7 +12,7 @@
        The output stays outside this project on purpose: the SDK's static web assets would otherwise
        record the old hashed file names before Vite replaces them, and the build fails. -->
   <ItemGroup>
-    <SpaSource Include="..\web\src\**\*;..\web\index.html;..\web\package.json;..\web\vite.config.ts" />
+    <SpaSource Include="..\web\src\**\*;..\web\public\**\*;..\web\*.html;..\web\package.json;..\web\vite.config.ts" />
   </ItemGroup>
 
   <Target Name="BuildSpa" BeforeTargets="BeforeBuild" Inputs="@(SpaSource)" Outputs="..\web\dist\index.html"

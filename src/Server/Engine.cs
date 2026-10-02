@@ -50,13 +50,27 @@ public sealed class ClaudeRunner(IOptions<JobHuntingOptions> options, ILogger<Cl
         logger.LogInformation("claude {Prompt} ({Model}, {Effort}) with {Chars:N0} chars of input",
             Path.GetFileName(systemPromptFile), step.Model, step.Effort, input.Length);
 
-        var result = await ProcessRunner.RunAsync(o.Executable, args, input, workDir, TimeSpan.FromMinutes(o.TimeoutMinutes), ct,
-            psi =>
-            {
-                // Set when the server is started from inside a Claude Code session; the child must not inherit it.
-                psi.Environment.Remove("CLAUDECODE");
-                psi.Environment.Remove("CLAUDE_CODE_ENTRYPOINT");
-            });
+        var started = DateTimeOffset.Now;
+        ProcessResult result;
+        try
+        {
+            result = await ProcessRunner.RunAsync(o.Executable, args, input, workDir, TimeSpan.FromMinutes(o.TimeoutMinutes), ct,
+                psi =>
+                {
+                    // Set when the server is started from inside a Claude Code session; the child must not inherit it.
+                    psi.Environment.Remove("CLAUDECODE");
+                    psi.Environment.Remove("CLAUDE_CODE_ENTRYPOINT");
+                });
+        }
+        catch (Exception ex) when (ex is TimeoutException or OperationCanceledException)
+        {
+            logger.LogWarning("claude {Prompt} ended without an answer after {Seconds:0}s: {Reason}",
+                Path.GetFileName(systemPromptFile), (DateTimeOffset.Now - started).TotalSeconds, ex.Message);
+            throw;
+        }
+        logger.LogInformation("claude {Prompt} exited with {Code} after {Seconds:0}s ({Out:N0} chars out){Err}",
+            Path.GetFileName(systemPromptFile), result.ExitCode, (DateTimeOffset.Now - started).TotalSeconds, result.StdOut.Length,
+            string.IsNullOrWhiteSpace(result.StdErr) ? "" : "; stderr: " + ProcessRunner.Tail(result.StdErr, 400));
 
         var jsonStart = result.StdOut.IndexOf('{');
         if (jsonStart < 0)
@@ -71,30 +85,13 @@ public sealed class ClaudeRunner(IOptions<JobHuntingOptions> options, ILogger<Cl
         if (root.TryGetProperty("stop_reason", out var stop) && stop.GetString() == "max_tokens")
             throw new InvalidOperationException("claude's answer was cut off (max output tokens reached).");
 
-        return new ClaudeResult(
+        var answer = new ClaudeResult(
             text,
             root.TryGetProperty("duration_ms", out var d) && d.TryGetInt64(out var ms) ? ms : 0,
             root.TryGetProperty("total_cost_usd", out var c) && c.TryGetDecimal(out var usd) ? usd : null);
-    }
-}
-
-/// <summary>Runs tool/render.mjs (JSON Resume theme + Chrome) to produce resume.pdf.</summary>
-public sealed class ResumeRenderer(Paths paths, IOptions<JobHuntingOptions> options)
-{
-    public bool IsAvailable => options.Value.Render.Enabled && File.Exists(paths.RenderScript);
-
-    public async Task RenderAsync(string folder, CancellationToken ct)
-    {
-        var o = options.Value.Render;
-        var pdf = Path.Combine(folder, "resume.pdf");
-        var args = new List<string> { paths.RenderScript, "--in", Path.Combine(folder, "resume.json"), "--out", pdf, "--theme", o.Theme };
-        if (!string.IsNullOrWhiteSpace(o.ChromePath)) args.AddRange(["--chrome", o.ChromePath]);
-
-        var result = await ProcessRunner.RunAsync(o.Node, args, null, Path.GetDirectoryName(paths.RenderScript)!, TimeSpan.FromMinutes(3), ct);
-        if (result.ExitCode != 0)
-            throw new InvalidOperationException($"render failed: {ProcessRunner.Tail(result.StdErr + result.StdOut)}");
-        if (!File.Exists(pdf))
-            throw new InvalidOperationException("render finished but produced no resume.pdf.");
+        logger.LogInformation("claude {Prompt} answered: API {Seconds:0}s, ${Cost:0.00}, {Chars:N0} chars",
+            Path.GetFileName(systemPromptFile), answer.DurationMs / 1000.0, answer.CostUsd ?? 0, text.Length);
+        return answer;
     }
 }
 
@@ -133,6 +130,8 @@ public static class ResumeChecks
         foreach (var entry in (tailored[section] as JsonArray)?.OfType<JsonObject>() ?? [])
         {
             var name = nameOf(entry);
+            if (Same(name, "Earlier career")) continue; // the "collapse" setting's summary entry, by design not in the master
+
             var start = Str(entry, "startDate");
             var match = masterEntries.FirstOrDefault(m => Same(nameOf(m), name) && Str(m, "startDate") == start);
             if (match is null)

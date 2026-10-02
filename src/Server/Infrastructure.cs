@@ -53,7 +53,7 @@ public static class Files
 
 public static class Slug
 {
-    public static string Make(string? value, int maxLength)
+    public static string Make(string? value, int maxLength, char separator = '-', bool lowercase = true)
     {
         if (string.IsNullOrWhiteSpace(value)) return "";
         // 'ł' has no Unicode decomposition, so FormD alone would drop it.
@@ -62,11 +62,11 @@ public static class Slug
         foreach (var c in normalized)
         {
             if (CharUnicodeInfo.GetUnicodeCategory(c) == UnicodeCategory.NonSpacingMark) continue;
-            if (char.IsAsciiLetterOrDigit(c)) sb.Append(char.ToLowerInvariant(c));
-            else if (sb.Length > 0 && sb[^1] != '-') sb.Append('-');
+            if (char.IsAsciiLetterOrDigit(c)) sb.Append(lowercase ? char.ToLowerInvariant(c) : c);
+            else if (sb.Length > 0 && sb[^1] != separator) sb.Append(separator);
         }
-        var slug = sb.ToString().Trim('-');
-        return slug.Length > maxLength ? slug[..maxLength].TrimEnd('-') : slug;
+        var slug = sb.ToString().Trim(separator);
+        return slug.Length > maxLength ? slug[..maxLength].TrimEnd(separator) : slug;
     }
 }
 
@@ -104,13 +104,19 @@ public static class ProcessRunner
 
         var stdout = process.StandardOutput.ReadToEndAsync(cts.Token);
         var stderr = process.StandardError.ReadToEndAsync(cts.Token);
-        try
+        // Write stdin in the background: a pipe write ignores cancellation, so if the child stalls before reading its
+        // input, awaiting the write here would block the timeout and Stop forever. Killing the child ends the write.
+        var input = stdin is null ? Task.CompletedTask : Task.Run(async () =>
         {
-            if (stdin is not null)
+            try
             {
-                await process.StandardInput.WriteAsync(stdin.AsMemory(), cts.Token);
+                await process.StandardInput.WriteAsync(stdin.AsMemory());
                 process.StandardInput.Close();
             }
+            catch (IOException) { } // the child exited or was killed before reading everything
+        });
+        try
+        {
             await process.WaitForExitAsync(cts.Token);
         }
         catch (OperationCanceledException)
@@ -118,6 +124,10 @@ public static class ProcessRunner
             try { process.Kill(entireProcessTree: true); } catch (InvalidOperationException) { }
             if (ct.IsCancellationRequested) throw;
             throw new TimeoutException($"{Path.GetFileName(executable)} did not finish within {timeout.TotalMinutes:0} minutes.");
+        }
+        finally
+        {
+            await input.WaitAsync(TimeSpan.FromSeconds(5)).ContinueWith(_ => { }); // never let a stuck write hold us up
         }
         return new ProcessResult(process.ExitCode, await stdout, await stderr);
     }

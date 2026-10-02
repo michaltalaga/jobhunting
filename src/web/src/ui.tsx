@@ -3,12 +3,17 @@ import type { ApplicationStatus, JobSummary, ProcessingStatus, TimelineEvent } f
 import { useJobs } from './jobs';
 
 export const processingLabels: Record<ProcessingStatus, string> = {
+  new: 'New',
   queued: 'In queue',
   extracting: 'Extracting spec',
+  scoring: 'Scoring match',
+  readyToTailor: 'Ready to tailor',
   tailoring: 'Tailoring resume',
   rendering: 'Rendering PDF',
+  reviewing: 'Reviewing',
   processed: 'Processed',
   failed: 'Failed',
+  onHold: 'On hold',
 };
 
 export const applicationLabels: Record<ApplicationStatus, string> = {
@@ -17,11 +22,55 @@ export const applicationLabels: Record<ApplicationStatus, string> = {
   interview: 'Interview',
   rejected: 'Rejected',
   offer: 'Offer',
+  dropped: 'Dropped',
 };
 
-export const applicationOrder: ApplicationStatus[] = ['notApplied', 'applied', 'interview', 'rejected', 'offer'];
+export const applicationOrder: ApplicationStatus[] = ['notApplied', 'applied', 'interview', 'rejected', 'offer', 'dropped'];
 
-export const isWorking = (s: ProcessingStatus) => s === 'extracting' || s === 'tailoring' || s === 'rendering';
+export const isWorking = (s: ProcessingStatus) =>
+  s === 'extracting' || s === 'scoring' || s === 'tailoring' || s === 'rendering' || s === 'reviewing';
+
+/** Application log event types; `response` = the employer came back to you. Mirrors ApplicationEventTypes on the server. */
+export const applicationEventTypes: { type: string; label: string; response: boolean }[] = [
+  { type: 'confirmed', label: 'They confirmed', response: true },
+  { type: 'contacted', label: 'Recruiter reached out', response: true },
+  { type: 'interviewScheduled', label: 'Interview scheduled', response: true },
+  { type: 'interviewDone', label: 'Interview done', response: true },
+  { type: 'followedUp', label: 'I followed up', response: false },
+  { type: 'rejected', label: 'Rejected', response: true },
+  { type: 'offer', label: 'Offer', response: true },
+  { type: 'note', label: 'Note', response: false },
+];
+
+export const eventLabel = (type: string) => applicationEventTypes.find((t) => t.type === type)?.label ?? type;
+
+/** Applied, and the employer hasn't responded since: "no reply · 12d". */
+export function NoReplyTag({ job }: { job: JobSummary }) {
+  if (!isAwaitingReply(job)) return null;
+  const days = Math.floor((Date.now() - Date.parse(job.appliedAt!)) / 86_400_000);
+  return (
+    <span className={days >= 14 ? 'tag error' : 'tag warn'} title="Applied, and no response logged since">
+      no reply · {days}d
+    </span>
+  );
+}
+
+// Timestamps may carry different offsets ("Z" vs "+02:00"), so compare them as dates, not strings.
+export const isAwaitingReply = (job: JobSummary) =>
+  job.applicationStatus === 'applied' &&
+  !!job.appliedAt &&
+  !(job.lastResponseAt && Date.parse(job.lastResponseAt) >= Date.parse(job.appliedAt));
+
+/** Match score as a coloured pill: green 80+, amber 60–79, red below 60. */
+export function MatchPill({ score }: { score: number | null }) {
+  if (score == null) return <span className="muted">—</span>;
+  const band = score >= 80 ? 'high' : score >= 60 ? 'mid' : 'low';
+  return (
+    <span className={`match match-${band}`} title="How well your profile fits this job">
+      {score}
+    </span>
+  );
+}
 
 export function ProcessingBadge({ status }: { status: ProcessingStatus }) {
   return (
@@ -57,12 +106,17 @@ export const daysUntil = (day: string) => {
 };
 
 const timelineProcessing: Record<ProcessingStatus, string> = {
+  new: 'Captured',
   queued: 'Queued',
   extracting: 'Extraction started',
+  scoring: 'Match scoring started',
+  readyToTailor: 'Ready to tailor',
   tailoring: 'Tailoring started',
   rendering: 'PDF rendering started',
+  reviewing: 'Pre-send review started',
   processed: 'Processing finished',
   failed: 'Processing failed',
+  onHold: 'Put on hold',
 };
 
 export function timelineLabel(e: TimelineEvent) {
@@ -84,6 +138,22 @@ export function timelineLabel(e: TimelineEvent) {
       return 'Regeneration requested';
     case 'reextracted':
       return 'Re-extraction requested';
+    case 'theme':
+      return 'Theme changed';
+    case 'tailoring':
+      return 'Tailoring overrides changed';
+    case 'reviewed':
+      return 'Reviewed by the HR consultant';
+    case 'matched':
+      return 'Match scored';
+    case 'tailor':
+      return 'Tailoring requested';
+    case 'held':
+      return 'Taken out of the queue';
+    case 'stopped':
+      return 'Stopped while running';
+    case 'resumed':
+      return 'Resumed';
     default:
       return e.event;
   }
@@ -109,9 +179,12 @@ export function Header() {
       <Link to="/" className="brand">
         Job Hunting
       </Link>
-      <span className={`live ${connected ? 'on' : 'off'}`} title={connected ? 'Live updates connected' : 'Server not reachable'}>
-        {connected ? 'Live' : 'Offline'}
-      </span>
+      <nav className="topnav">
+        <Link to="/settings">Settings</Link>
+        <span className={`live ${connected ? 'on' : 'off'}`} title={connected ? 'Live updates connected' : 'Server not reachable'}>
+          {connected ? 'Live' : 'Offline'}
+        </span>
+      </nav>
     </header>
   );
 }

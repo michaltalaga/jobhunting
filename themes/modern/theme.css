@@ -1,0 +1,268 @@
+/* Modern: teal accent, bold header, ruled section titles. Single column, so ATS parsers read it in order. */
+
+.resume {
+  --accent: #0f6e80;
+  --muted: #56616e;
+  --rule: #d3dae1;
+
+  font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  font-size: 10pt;
+  line-height: 1.42;
+  color: #1d2630;
+}
+
+.resume a {
+  color: inherit;
+  text-decoration: none;
+}
+
+/* Header */
+
+.r-header {
+  border-left: 4pt solid var(--accent);
+  padding: 1pt 0 1pt 11pt;
+  margin-bottom: 6pt;
+}
+
+.r-name {
+  font-size: 25pt;
+  font-weight: 700;
+  letter-spacing: -0.3pt;
+  line-height: 1.1;
+  margin: 0;
+  color: #111;
+}
+
+.r-label {
+  font-size: 12pt;
+  font-weight: 600;
+  color: var(--accent);
+  margin: 3pt 0 6pt;
+}
+
+.r-contact {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1pt 14pt;
+  font-size: 9pt;
+  color: var(--muted);
+}
+
+/* Sections */
+
+.r-section h2 {
+  display: flex;
+  align-items: center;
+  gap: 8pt;
+  font-size: 10pt;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1.4pt;
+  color: var(--accent);
+  margin: 13pt 0 6pt;
+}
+
+.r-section h2::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--rule);
+}
+
+.r-section p {
+  margin: 0;
+}
+
+/* Experience, projects, education */
+
+.r-entry {
+  margin-bottom: 9pt;
+}
+
+.r-entry-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12pt;
+}
+
+.r-title {
+  display: inline;
+  font-size: 10.5pt;
+  font-weight: 700;
+  margin: 0;
+  color: #111;
+}
+
+.r-org {
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.r-org::before {
+  content: " · ";
+  color: #9aa5b1;
+  font-weight: 400;
+}
+
+.r-title:empty + .r-org::before,
+.r-entry-what > .r-org:first-child::before {
+  content: "";
+}
+
+.r-entry-meta {
+  white-space: nowrap;
+  font-size: 9pt;
+  color: var(--muted);
+}
+
+.r-entry-meta .r-location + .r-dates::before {
+  content: " · ";
+}
+
+.r-entry-summary {
+  margin: 2pt 0 0 !important;
+  color: #333d48;
+}
+
+.r-highlights {
+  margin: 3pt 0 0;
+  padding-left: 13pt;
+}
+
+.r-highlights li {
+  margin-bottom: 2pt;
+}
+
+.r-highlights li::marker {
+  color: var(--accent);
+}
+
+.r-keywords {
+  margin-top: 2pt !important;
+  font-size: 9pt;
+  color: var(--muted);
+}
+
+/* Earlier Experience: one line per role */
+
+.r-earlier-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.r-earlier-list li {
+  margin-bottom: 2.5pt;
+}
+
+.r-earlier-list .r-location::before {
+  content: ", ";
+}
+
+.r-earlier-list .r-location,
+.r-earlier-list .r-dates {
+  color: var(--muted);
+  font-size: 9pt;
+}
+
+.r-earlier-list .r-dates::before {
+  content: " · ";
+}
+
+.r-earlier-list .r-outcome::before {
+  content: " — ";
+  color: #9aa5b1;
+}
+
+/* One-line entries (projects without bullets) */
+
+.r-entry-compact {
+  margin-bottom: 3.5pt;
+}
+
+.r-projects .r-org {
+  font-weight: 400;
+  color: #333d48;
+}
+
+.r-projects .r-org::before {
+  content: " — ";
+}
+
+.r-entry-compact .r-keywords::before {
+  content: " · ";
+  color: #9aa5b1;
+}
+
+/* Skills */
+
+.r-skill-groups {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 2.5pt;
+}
+
+.r-skill-group {
+  display: grid;
+  grid-template-columns: 40mm 1fr;
+  gap: 8pt;
+}
+
+.r-skill-name {
+  font-weight: 700;
+  color: #111;
+}
+
+/* Fit for This Role: a two-column T-letter, requirement on the left, aligned with the skills above */
+
+.r-fit-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 4pt;
+}
+
+.r-fit-item {
+  display: grid;
+  grid-template-columns: 40mm 1fr;
+  gap: 8pt;
+}
+
+.r-fit-requirement {
+  font-weight: 700;
+  color: var(--accent);
+}
+
+/* Certifications, publications */
+
+.r-list {
+  margin: 0;
+  padding-left: 13pt;
+}
+
+.r-list li::marker {
+  color: var(--accent);
+}
+
+.r-item-by {
+  color: var(--muted);
+}
+
+.r-item-by::before {
+  content: " · ";
+}
+
+.r-item-date {
+  color: var(--muted);
+}
+
+.r-item-date::before {
+  content: ", ";
+}
