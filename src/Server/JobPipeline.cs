@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Microsoft.Extensions.Options;
 
 namespace JobHunting.Server;
@@ -158,19 +159,20 @@ public sealed class JobPipeline(
         var spec = await File.ReadAllTextAsync(Path.Combine(folder, "spec.md"), ct);
         var current = Files.ReadIfExists(resumePath);
         var pending = s.ChangeRequests.Where(c => c.Status == ChangeRequestStatus.Pending).ToList();
+        var settings = tailoring.Effective(s.Tailoring);
 
         // Stable inputs first, so the prompt cache is reused from one job to the next.
         var input = new StringBuilder();
         await AppendSourcesAsync(input, master, ct);
         input
-            .AppendLine("<settings>").Append(TailoringSettings.ToPrompt(tailoring.Effective(s.Tailoring))).AppendLine("</settings>").AppendLine()
+            .AppendLine("<settings>").Append(TailoringSettings.ToPrompt(settings)).AppendLine("</settings>").AppendLine()
             .AppendLine($"<job_advert company=\"{s.Company}\" role=\"{s.Role}\" location=\"{s.Location}\" url=\"{s.Url}\">")
             .AppendLine(spec)
             .AppendLine("</job_advert>").AppendLine();
 
         if (current is not null && pending.Count > 0)
         {
-            input.AppendLine("<current_resume>").AppendLine(current).AppendLine("</current_resume>").AppendLine()
+            input.AppendLine("<current_resume>").AppendLine(SingleLine(current)).AppendLine("</current_resume>").AppendLine()
                  .AppendLine("<current_notes>").AppendLine(Files.ReadIfExists(notesPath)).AppendLine("</current_notes>").AppendLine();
         }
         if (pending.Count > 0)
@@ -191,7 +193,11 @@ public sealed class JobPipeline(
         var resumeJson = TaggedOutput.Get(result.Text, "resume_json")
             ?? throw new InvalidOperationException("Claude's answer had no <resume_json> block.");
         var notes = TaggedOutput.Get(result.Text, "notes") ?? "";
-        var (resume, warnings) = ResumeChecks.Apply(resumeJson, master);
+        // A number may come from anything the candidate wrote, but not from the reviewer's suggestions.
+        var sources = DataFolder.BackgroundFiles(paths).Select(File.ReadAllText)
+            .Append(settings["instructions"]?.GetValue<string>() ?? "")
+            .Concat(s.ChangeRequests.Where(c => !c.FromReview).Select(c => c.Text));
+        var (resume, warnings) = ResumeChecks.Apply(resumeJson, master, sources);
 
         File.Delete(Path.Combine(folder, "resume.pdf")); // no longer matches the resume; render again on request
         await Files.WriteAtomicAsync(resumePath, resume + "\n", ct);
@@ -199,7 +205,7 @@ public sealed class JobPipeline(
 
         var included = pending.Select(c => c.At).ToHashSet();
         // Only a first tailoring (new job or Regenerate) gets the pre-send review; revisions don't loop back into it.
-        var review = current is null && tailoring.Effective(s.Tailoring)["review"]?.GetValue<string>() == "revise";
+        var review = current is null && settings["review"]?.GetValue<string>() == "revise";
         store.Update(id, x =>
         {
             x.Warnings = warnings;
@@ -227,8 +233,14 @@ public sealed class JobPipeline(
             .AppendLine("<settings>").Append(TailoringSettings.ToPrompt(tailoring.Effective(s.Tailoring))).AppendLine("</settings>").AppendLine()
             .AppendLine("<job_advert>").AppendLine(await File.ReadAllTextAsync(Path.Combine(folder, "spec.md"), ct)).AppendLine("</job_advert>").AppendLine()
             .AppendLine($"<rendered_pages>{s.PdfPages?.ToString() ?? "unknown"}</rendered_pages>").AppendLine()
-            .AppendLine("<resume>").AppendLine(await File.ReadAllTextAsync(Path.Combine(folder, "resume.json"), ct)).AppendLine("</resume>").AppendLine()
-            .AppendLine("Review this resume for this job.");
+            .AppendLine("<resume>").AppendLine(SingleLine(await File.ReadAllTextAsync(Path.Combine(folder, "resume.json"), ct))).AppendLine("</resume>").AppendLine();
+        if (s.Warnings.Count > 0)
+        {
+            input.AppendLine("<server_checks>");
+            foreach (var warning in s.Warnings) input.AppendLine($"- {warning}");
+            input.AppendLine("</server_checks>").AppendLine();
+        }
+        input.AppendLine("Review this resume for this job.");
 
         var step = options.Value.Claude.Review;
         var result = await claude.RunAsync(paths.Prompt("review.md"), input.ToString(), step, ct);
@@ -288,7 +300,7 @@ public sealed class JobPipeline(
     private sealed record MatchDetail(
         string? Summary, List<MatchRequirement>? Requirements, string? Seniority, string? Domain, string? Location, string? BiggestGap);
 
-    /// <summary>The candidate's sources: background documents, then the master resume.</summary>
+    /// <summary>The candidate's sources: background documents, then the master resume as Markdown (much shorter than its JSON).</summary>
     private async Task AppendSourcesAsync(StringBuilder input, string master, CancellationToken ct)
     {
         input.AppendLine("<background>");
@@ -297,8 +309,11 @@ public sealed class JobPipeline(
                  .AppendLine(await File.ReadAllTextAsync(file, ct))
                  .AppendLine("</document>");
         input.AppendLine("</background>").AppendLine()
-             .AppendLine("<master_resume>").AppendLine(master).AppendLine("</master_resume>").AppendLine();
+             .AppendLine("<master_resume>").Append(MasterMarkdown.Render(master)).AppendLine("</master_resume>").AppendLine();
     }
+
+    /// <summary>A tailored resume as single-line JSON: the same content in fewer tokens.</summary>
+    private static string SingleLine(string json) => JsonNode.Parse(json)?.ToJsonString(Json.Prompt) ?? json;
 
     private void RecordRun(string id, string name, ClaudeStepOptions step, ClaudeResult result) =>
         store.Update(id, x => x.Runs.Add(new ClaudeRun(name, DateTimeOffset.Now, result.DurationMs, result.CostUsd, step.Model, step.Effort)));

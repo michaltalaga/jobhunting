@@ -1,5 +1,4 @@
 using System.Text.Json;
-using System.Text.Json.Nodes;
 using Microsoft.Extensions.Options;
 
 namespace JobHunting.Server;
@@ -93,61 +92,4 @@ public sealed class ClaudeRunner(IOptions<JobHuntingOptions> options, ILogger<Cl
             Path.GetFileName(systemPromptFile), answer.DurationMs / 1000.0, answer.CostUsd ?? 0, text.Length);
         return answer;
     }
-}
-
-/// <summary>Deterministic guard rails applied to every tailored resume.</summary>
-public static class ResumeChecks
-{
-    private static readonly string[] ContactFields = ["name", "email", "phone", "url", "image", "location", "profiles"];
-
-    public static (string Json, List<string> Warnings) Apply(string tailoredJson, string masterJson)
-    {
-        var tailored = JsonNode.Parse(tailoredJson) as JsonObject
-            ?? throw new InvalidOperationException("The tailored resume is not a JSON object.");
-        var master = JsonNode.Parse(masterJson) as JsonObject
-            ?? throw new InvalidOperationException("The master resume is not a JSON object.");
-        var warnings = new List<string>();
-
-        // Contact details always come from the master resume, never from the model.
-        if (master["basics"] is JsonObject masterBasics)
-        {
-            if (tailored["basics"] is not JsonObject basics) tailored["basics"] = basics = [];
-            foreach (var field in ContactFields)
-                if (masterBasics[field] is { } value) basics[field] = value.DeepClone();
-        }
-
-        CheckEntries(tailored, master, "work", e => Str(e, "name") ?? Str(e, "company"), "position", warnings);
-        CheckEntries(tailored, master, "education", e => Str(e, "institution"), "studyType", warnings);
-
-        return (tailored.ToJsonString(Json.Files), warnings);
-    }
-
-    /// <summary>Employers, titles and dates must match the master resume exactly.</summary>
-    private static void CheckEntries(JsonObject tailored, JsonObject master, string section,
-        Func<JsonObject, string?> nameOf, string titleField, List<string> warnings)
-    {
-        var masterEntries = (master[section] as JsonArray)?.OfType<JsonObject>().ToList() ?? [];
-        foreach (var entry in (tailored[section] as JsonArray)?.OfType<JsonObject>() ?? [])
-        {
-            var name = nameOf(entry);
-            if (Same(name, "Earlier career")) continue; // the "collapse" setting's summary entry, by design not in the master
-
-            var start = Str(entry, "startDate");
-            var match = masterEntries.FirstOrDefault(m => Same(nameOf(m), name) && Str(m, "startDate") == start);
-            if (match is null)
-            {
-                warnings.Add($"{section}: \"{name}\" (start {start ?? "?"}) does not match any entry in the master resume.");
-                continue;
-            }
-            if (!Same(Str(match, titleField), Str(entry, titleField)))
-                warnings.Add($"{section}: \"{name}\" {titleField} changed from \"{Str(match, titleField)}\" to \"{Str(entry, titleField)}\".");
-            if (Str(match, "endDate") != Str(entry, "endDate"))
-                warnings.Add($"{section}: \"{name}\" end date changed from \"{Str(match, "endDate") ?? "present"}\" to \"{Str(entry, "endDate") ?? "present"}\".");
-        }
-    }
-
-    private static string? Str(JsonObject o, string key) =>
-        o[key] is JsonValue v && v.TryGetValue<string>(out var s) && !string.IsNullOrWhiteSpace(s) ? s.Trim() : null;
-
-    private static bool Same(string? a, string? b) => string.Equals(a, b, StringComparison.OrdinalIgnoreCase);
 }

@@ -159,7 +159,7 @@ function Artifacts({ job, detail }: { job: JobSummary; detail: JobDetail }) {
 
       {detail.warnings.length > 0 && (tab === 'resume' || tab === 'pdf' || tab === 'json') && (
         <div className="alert warn">
-          <strong>Check these against your master resume:</strong>
+          <strong>Check these before sending:</strong>
           <ul>
             {detail.warnings.map((w, i) => (
               <li key={i}>{w}</li>

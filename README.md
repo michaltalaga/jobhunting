@@ -77,10 +77,15 @@ git remote add origin <your private repo URL>
 
 ## Guard rails
 
-The tailoring prompt forbids inventing employers, titles, dates, metrics or skills. It may select, reorder and rephrase, mirroring the advert's terminology where that's truthful. After every run the server also:
+The tailoring prompt forbids inventing employers, titles, dates, metrics or skills. It may select, reorder and rephrase, mirroring the advert's terminology where that's truthful.
 
-- copies contact details from the master resume over whatever the model wrote;
-- flags any work or education entry whose employer, title or dates don't match the master resume. These warnings show on the job's page.
+The model sees the master resume as Markdown, with every entry tagged by a reference (`[W3]` is the third work entry), and picks entries by that reference. After every run the server:
+
+- copies contact details and each picked entry's facts from the master resume over whatever the model wrote: employers, titles, locations, dates, degrees, project names, certificate and award names. The model only writes the text;
+- writes the closing "More projects" line itself, with the real count;
+- flags every number in the text that appears nowhere in your master resume, background files, instructions or change requests, and any entry it can't find in the master resume.
+
+The warnings show on the job's page, and the pre-send review must fix each flagged number.
 
 ## Configuration
 

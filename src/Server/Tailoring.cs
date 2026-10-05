@@ -36,9 +36,9 @@ public sealed class TailoringSettings(Paths paths)
         new("earliestYear", "Earliest year", "number", 0,
             "Leave out positions that started before this year; 0 keeps all. The summary's years of experience still counts the whole career."),
         new("earlierCareer", "Earlier career", "choice", "list",
-            "Positions outside the detailed window. list: one entry per position with title, employer and dates exactly as in " +
-            "the master resume, a one-clause outcome as its summary, and no highlights. collapse: a single work entry named " +
-            "\"Earlier career\" spanning their dates, naming the employers in a one-sentence summary. omit: leave them out.",
+            "Positions outside the detailed window. list: one entry per position (by its ref), with a one-clause outcome as " +
+            "its summary and no highlights. collapse: a single work entry named \"Earlier career\" whose \"refs\" list those " +
+            "positions (the server sets its dates), naming the employers in a one-sentence summary. omit: leave them out.",
             ["list", "collapse", "omit"]),
         new("projects", "Projects", "number", 5,
             "Number of projects to show as one-liners, featured projects included: the most substantial builds first " +

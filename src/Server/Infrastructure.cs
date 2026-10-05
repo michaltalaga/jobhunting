@@ -19,6 +19,12 @@ public static class Json
     /// <summary>Single-line, for server-sent events.</summary>
     public static readonly JsonSerializerOptions Compact = Configure(new JsonSerializerOptions(JsonSerializerDefaults.Web));
 
+    /// <summary>Single-line with Polish characters kept readable, for prompts.</summary>
+    public static readonly JsonSerializerOptions Prompt = Configure(new JsonSerializerOptions(JsonSerializerDefaults.Web)
+    {
+        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+    });
+
     public static JsonSerializerOptions Configure(JsonSerializerOptions options)
     {
         options.Converters.Add(new JsonStringEnumConverter(JsonNamingPolicy.CamelCase));
